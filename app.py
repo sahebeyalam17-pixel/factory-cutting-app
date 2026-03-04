@@ -1,25 +1,24 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import time
 
-# --- THE MASTER CONFIGURATION ---
-# 1. Look at your Google Sheet URL. Copy the ID between /d/ and /edit
-# Example: 1AbC_dEfGhIjKlMnOpQrStUvWxYz
+# --- CONFIGURATION ---
+# Replace the ID below with the random letters/numbers from your browser URL
 SHEET_ID = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit?gid=0#gid=0"
-SHEET_NAME = "CUTTING_ENTRY"
 
-# This is the "Master Key" link - it asks Google for a CSV file directly
-READ_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+# This is the "Master Key" link that grabs the FIRST tab automatically
+READ_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
 
 st.set_page_config(page_title="Factory Cloud - Cutting", layout="wide")
 
 # --- DATA LOADING ---
 def load_data():
     try:
-        # We add a 'cache' breaker to make sure it always gets the LATEST data
-        import time
-        df = pd.read_csv(f"{READ_URL}&cachebuster={time.time()}")
-        df.columns = df.columns.str.strip() # Remove hidden spaces
+        # We add a timestamp so Google doesn't show "Old" data
+        df = pd.read_csv(f"{READ_URL}&t={time.time()}")
+        # Clean up column names (removes spaces/capitals)
+        df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -29,7 +28,6 @@ page = st.sidebar.radio("Go to:", ["✂️ Daily Data Entry", "📊 Live Dashboa
 
 if page == "✂️ Daily Data Entry":
     st.title("🏭 Cutting Department - Entry Form")
-    st.info("Record production below. Once validated, you will save it to the Master Sheet.")
     
     with st.form("cutting_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -45,31 +43,38 @@ if page == "✂️ Daily Data Entry":
         submitted = st.form_submit_button("🚀 Validate & Save")
         
         if submitted:
-            st.success(f"✅ Data for {order} is ready!")
-            st.link_button("💾 Finalize: Save to Google Sheet", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit")
+            st.success(f"✅ Data Validated!")
+            st.link_button("💾 Save Entry to Google Sheet", f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit")
 
 elif page == "📊 Live Dashboard":
     st.title("📊 Cutting Live Analytics")
     df = load_data()
     
     if not df.empty:
-        # This part looks for your specific columns
-        # If your columns are named 'Actual Cut' instead of 'Actual_Cut', it fixes it
-        actual_col = "Actual_Cut" if "Actual_Cut" in df.columns else "Actual Cut"
-        rej_col = "Rejection" if "Rejection" in df.columns else "Rejections"
-        
+        # Find the columns even if they have slightly different names
+        # It will look for 'actual_cut' or 'actual' or 'qty'
+        cols = df.columns.tolist()
+        act_col = next((c for c in cols if "actual" in c or "cut" in c), None)
+        rej_col = next((c for c in cols if "rej" in c), None)
+        line_col = next((c for c in cols if "line" in c), None)
+
         c1, c2 = st.columns(2)
-        c1.metric("Total Pairs Cut", f"{df[actual_col].sum():,}")
-        c2.metric("Total Rejections", f"{df[rej_col].sum():,}")
+        if act_col:
+            c1.metric("Total Pairs Cut", f"{df[act_col].sum():,}")
+        if rej_col:
+            c2.metric("Total Rejections", f"{df[rej_col].sum():,}")
         
         st.divider()
-        st.subheader("Production by Line")
-        st.bar_chart(data=df, x="Line", y=actual_col)
+        if line_col and act_col:
+            st.subheader("Production by Line")
+            st.bar_chart(data=df, x=line_col, y=act_col)
         
         st.subheader("Master Data Log")
         st.dataframe(df, use_container_width=True)
     else:
-        st.error("⚠️ Dashboard is still empty.")
-        st.write("1. Open your Google Sheet.")
-        st.write("2. Click 'Share' -> Set to 'Anyone with link can VIEW'.")
-        st.write(f"3. Ensure the first tab is your data.")
+        st.error("⚠️ The Dashboard is not seeing any data.")
+        st.write("---")
+        st.subheader("Quick Check for Shabey:")
+        st.write("1. Is your Google Sheet **TOTALLY EMPTY**? (Add one row of test data now!)")
+        st.write("2. Are your headers in **Row 1**? (No titles above them!)")
+        st.write("3. Is the first tab at the bottom of your sheet the one with the data?")
