@@ -9,8 +9,10 @@ SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit"
 SECRET_PIN = "1234" 
 
 # --- PRODUCTION TARGETS ---
-MONTHLY_TARGET = 30000  # Change this to your actual monthly goal
-EFFICIENCY_THRESHOLD = 80.0  # Red alert if below 80%
+MONTHLY_TARGET = 30000  # Updated to 30,000
+WORKING_DAYS = 26       # Estimated working days in a month
+DAILY_TARGET = MONTHLY_TARGET / WORKING_DAYS
+EFFICIENCY_THRESHOLD = 80.0 
 
 st.set_page_config(page_title="FSD Cutting Dept", layout="wide", page_icon="✂️")
 
@@ -26,17 +28,12 @@ if not st.session_state["authenticated"]:
             st.session_state["authenticated"] = True
             st.rerun()
         else:
-            st.error("❌ Incorrect PIN. Access Denied.")
+            st.error("❌ Incorrect PIN.")
     st.stop() 
 
 # --- BRANDING HEADER ---
-col_logo, col_text = st.columns([1, 5])
-with col_logo:
-    st.image("https://cdn-icons-png.flaticon.com/512/1541/1541411.png", width=80)
-with col_text:
-    st.title("FSD CUTTING DEPARTMENT BY ALAM")
-    st.write("Process & Operations Management | Visual Alerts & Goal Tracking")
-
+st.title("FSD CUTTING DEPARTMENT BY ALAM")
+st.write(f"Target: **{MONTHLY_TARGET:,}** | Daily Requirement: **{DAILY_TARGET:.0f} Pairs**")
 st.divider()
 
 # --- DATA LOADING ---
@@ -44,15 +41,12 @@ def load_data():
     try:
         df = pd.read_csv(f"{PUBLISH_URL}&t={time.time()}")
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
-        
         act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
         plan_col = next((c for c in df.columns if "plan" in c), None)
-        
         if act_col and plan_col:
             df[act_col] = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
             df[plan_col] = pd.to_numeric(df[plan_col], errors='coerce').fillna(0)
-            df['calc_eff'] = (df[act_col] / df[plan_col] * 100).replace([float('inf'), -float('inf')], 0).fillna(0)
-        
+            df['calc_eff'] = (df[act_col] / df[plan_col] * 100).replace([float('inf')], 0).fillna(0)
         return df
     except:
         return pd.DataFrame()
@@ -74,57 +68,45 @@ if page == "✂️ Entry Form":
             rejection = st.number_input("Rejection", min_value=0)
             
         if st.form_submit_button("🚀 Validate & Save"):
-            calc_eff = (actual / planned) * 100 if planned > 0 else 0
-            st.success(f"✅ Data Validated! (Efficiency: {calc_eff:.1f}%)")
+            st.success(f"✅ Validated! (Daily Target: {DAILY_TARGET:.0f})")
             st.balloons()
-            st.link_button("💾 Save Entry to Master Sheet", SHEET_EDIT_URL)
+            st.link_button("💾 Save to Master Sheet", SHEET_EDIT_URL)
 
 elif page == "📊 Dashboard":
-    st.header("Live Analytics & Targets")
+    st.header("Live Performance Analytics")
     df = load_data()
     
     if not df.empty:
         act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
-        rej_col = next((c for c in df.columns if "rej" in c), None)
-
-        m1, m2, m3 = st.columns(3)
-        if act_col:
-            total_actual = df[act_col].sum()
-            m1.metric("Total Pairs Cut", f"{total_actual:,}")
-            
-            # --- COLOR CODED EFFICIENCY ---
-            avg_eff = df['calc_eff'].mean()
-            # Logic: If efficiency < 80, show red arrow down. If > 80, show green arrow up.
-            delta_color = "normal" if avg_eff >= EFFICIENCY_THRESHOLD else "inverse"
-            m3.metric(
-                label="Avg Dept Efficiency", 
-                value=f"{avg_eff:.1f}%", 
-                delta=f"{avg_eff - EFFICIENCY_THRESHOLD:.1f}% vs Threshold",
-                delta_color=delta_color
-            )
-
-        if rej_col:
-            df[rej_col] = pd.to_numeric(df[rej_col], errors='coerce').fillna(0)
-            total_rej = df[rej_col].sum()
-            m2.metric("Total Rejections", f"{total_rej:,}", delta="- Good" if total_rej < 50 else "+ Critical", delta_color="inverse")
-
-        # --- PROGRESS BAR FOR MONTHLY GOAL ---
-        st.divider()
-        st.subheader(f"📅 Monthly Production Goal: {MONTHLY_TARGET:,} Pairs")
-        progress = min(total_actual / MONTHLY_TARGET, 1.0) # Cap at 100%
-        st.progress(progress)
-        st.write(f"**{total_actual:,}** pairs cut out of **{MONTHLY_TARGET:,}** target ({progress*100:.1f}%)")
-
-        if st.sidebar.button("🔒 Logout"):
-            st.session_state["authenticated"] = False
-            st.rerun()
-
-        st.divider()
-        st.subheader("Production Log")
-        st.dataframe(df, use_container_width=True)
         
-        if act_col:
-            st.subheader("Performance Chart")
-            st.bar_chart(data=df, x="line" if "line" in df.columns else df.columns[2], y=act_col)
+        # --- TOP METRICS ---
+        total_actual = df[act_col].sum() if act_col else 0
+        avg_eff = df['calc_eff'].mean() if 'calc_eff' in df.columns else 0
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Monthly Cut", f"{total_actual:,}")
+        m2.metric("Monthly Progress", f"{(total_actual/MONTHLY_TARGET)*100:.1f}%")
+        
+        # Efficiency Color Alert
+        color = "normal" if avg_eff >= EFFICIENCY_THRESHOLD else "inverse"
+        m3.metric("Avg Efficiency", f"{avg_eff:.1f}%", delta=f"{avg_eff-EFFICIENCY_THRESHOLD:.1f}%", delta_color=color)
+
+        # --- PROGRESS BAR ---
+        st.subheader(f"📅 Progress towards {MONTHLY_TARGET:,} Goal")
+        progress = min(total_actual / MONTHLY_TARGET, 1.0)
+        st.progress(progress)
+
+        # --- DAILY TARGET CHART ---
+        st.divider()
+        st.subheader("Daily Output vs. Target Line")
+        if 'date' in df.columns:
+            # Group by date to see total production per day
+            daily_data = df.groupby('date')[act_col].sum().reset_index()
+            # Add the target line
+            daily_data['Target'] = DAILY_TARGET
+            st.line_chart(daily_data.set_index('date'))
+        
+        st.subheader("Recent Production History")
+        st.dataframe(df, use_container_width=True)
     else:
         st.error("⚠️ Data connection error.")
