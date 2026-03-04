@@ -8,6 +8,10 @@ PUBLISH_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRv9ombwUlAaUU1-5
 SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit" 
 SECRET_PIN = "1234" 
 
+# --- PRODUCTION TARGETS ---
+MONTHLY_TARGET = 30000  # Change this to your actual monthly goal
+EFFICIENCY_THRESHOLD = 80.0  # Red alert if below 80%
+
 st.set_page_config(page_title="FSD Cutting Dept", layout="wide", page_icon="✂️")
 
 # --- LOGIN SYSTEM ---
@@ -31,7 +35,7 @@ with col_logo:
     st.image("https://cdn-icons-png.flaticon.com/512/1541/1541411.png", width=80)
 with col_text:
     st.title("FSD CUTTING DEPARTMENT BY ALAM")
-    st.write("Process & Operations Management | Efficiency & Production Tracking")
+    st.write("Process & Operations Management | Visual Alerts & Goal Tracking")
 
 st.divider()
 
@@ -41,19 +45,13 @@ def load_data():
         df = pd.read_csv(f"{PUBLISH_URL}&t={time.time()}")
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         
-        # --- THE BULLETPROOF EFFICIENCY FIX ---
-        # Find Actual and Planned columns
         act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
         plan_col = next((c for c in df.columns if "plan" in c), None)
         
         if act_col and plan_col:
-            # Force columns to be numbers, replace errors with 0
             df[act_col] = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
             df[plan_col] = pd.to_numeric(df[plan_col], errors='coerce').fillna(0)
-            
-            # Create a NEW efficiency column based on the math (Actual / Planned)
-            # This ignores whatever is in Column G and does the math correctly
-            df['calculated_efficiency'] = (df[act_col] / df[plan_col] * 100).replace([float('inf'), -float('inf')], 0).fillna(0)
+            df['calc_eff'] = (df[act_col] / df[plan_col] * 100).replace([float('inf'), -float('inf')], 0).fillna(0)
         
         return df
     except:
@@ -82,7 +80,7 @@ if page == "✂️ Entry Form":
             st.link_button("💾 Save Entry to Master Sheet", SHEET_EDIT_URL)
 
 elif page == "📊 Dashboard":
-    st.header("Live Analytics")
+    st.header("Live Analytics & Targets")
     df = load_data()
     
     if not df.empty:
@@ -94,22 +92,35 @@ elif page == "📊 Dashboard":
             total_actual = df[act_col].sum()
             m1.metric("Total Pairs Cut", f"{total_actual:,}")
             
-            # Get the average from our new bulletproof column
-            avg_eff = df['calculated_efficiency'].mean()
-            m3.metric("Avg Dept Efficiency", f"{avg_eff:.1f}%")
+            # --- COLOR CODED EFFICIENCY ---
+            avg_eff = df['calc_eff'].mean()
+            # Logic: If efficiency < 80, show red arrow down. If > 80, show green arrow up.
+            delta_color = "normal" if avg_eff >= EFFICIENCY_THRESHOLD else "inverse"
+            m3.metric(
+                label="Avg Dept Efficiency", 
+                value=f"{avg_eff:.1f}%", 
+                delta=f"{avg_eff - EFFICIENCY_THRESHOLD:.1f}% vs Threshold",
+                delta_color=delta_color
+            )
 
         if rej_col:
-            # Clean rejections too just in case
             df[rej_col] = pd.to_numeric(df[rej_col], errors='coerce').fillna(0)
             total_rej = df[rej_col].sum()
-            m2.metric("Total Rejections", f"{total_rej:,}")
+            m2.metric("Total Rejections", f"{total_rej:,}", delta="- Good" if total_rej < 50 else "+ Critical", delta_color="inverse")
+
+        # --- PROGRESS BAR FOR MONTHLY GOAL ---
+        st.divider()
+        st.subheader(f"📅 Monthly Production Goal: {MONTHLY_TARGET:,} Pairs")
+        progress = min(total_actual / MONTHLY_TARGET, 1.0) # Cap at 100%
+        st.progress(progress)
+        st.write(f"**{total_actual:,}** pairs cut out of **{MONTHLY_TARGET:,}** target ({progress*100:.1f}%)")
 
         if st.sidebar.button("🔒 Logout"):
             st.session_state["authenticated"] = False
             st.rerun()
 
         st.divider()
-        st.subheader("Production History")
+        st.subheader("Production Log")
         st.dataframe(df, use_container_width=True)
         
         if act_col:
