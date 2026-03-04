@@ -5,13 +5,11 @@ import time
 
 # --- CONFIGURATION ---
 PUBLISH_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRv9ombwUlAaUU1-5rbkKeASVPN27FBzwc4T4x1be0EMMwfC-burrR6SJ7JUGxa6pDa1ifWhx1_HuML/pub?output=csv"
-SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit" # Your Edit Link
+SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit" 
 
 # --- SECURITY SETTINGS ---
-# CHANGE YOUR PIN HERE (Current: 1234)
 SECRET_PIN = "1234" 
 
-# --- PAGE BRANDING ---
 st.set_page_config(page_title="FSD Cutting Dept", layout="wide", page_icon="✂️")
 
 # --- LOGIN SYSTEM ---
@@ -29,14 +27,13 @@ if not st.session_state["authenticated"]:
             st.error("❌ Incorrect PIN. Access Denied.")
     st.stop() 
 
-# --- BRANDING HEADER (Once Logged In) ---
+# --- BRANDING HEADER ---
 col_logo, col_text = st.columns([1, 5])
 with col_logo:
-    # Professional Factory Icon
     st.image("https://cdn-icons-png.flaticon.com/512/1541/1541411.png", width=80)
 with col_text:
     st.title("FSD CUTTING DEPARTMENT BY ALAM")
-    st.write("Process & Operations Management | Real-Time Production Tracking")
+    st.write("Process & Operations Management | Efficiency & Production Tracking")
 
 st.divider()
 
@@ -67,7 +64,9 @@ if page == "✂️ Entry Form":
             rejection = st.number_input("Rejection", min_value=0)
             
         if st.form_submit_button("🚀 Validate & Save"):
-            st.success(f"✅ Data for {order} Validated!")
+            # Calculate efficiency for the success message
+            calc_eff = (actual / planned) * 100 if planned > 0 else 0
+            st.success(f"✅ Data for {order} Validated! (Efficiency: {calc_eff:.1f}%)")
             st.balloons()
             st.link_button("💾 Save Entry to Master Sheet", SHEET_EDIT_URL)
 
@@ -76,30 +75,37 @@ elif page == "📊 Dashboard":
     df = load_data()
     
     if not df.empty:
-        # Identify columns
+        # Identify columns dynamically
         act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
         rej_col = next((c for c in df.columns if "rej" in c), None)
-        line_col = next((c for c in df.columns if "line" in c), None)
+        plan_col = next((c for c in df.columns if "plan" in c), None)
+        # Look for efficiency specifically
+        eff_col = next((c for c in df.columns if "eff" in c), None)
 
-        m1, m2 = st.columns(2)
+        m1, m2, m3 = st.columns(3)
         if act_col:
-            total_cut = df[act_col].sum()
-            m1.metric("Total Pairs Cut", f"{total_cut:,}")
+            m1.metric("Total Pairs Cut", f"{df[act_col].sum():,}")
         if rej_col:
-            total_rej = df[rej_col].sum()
-            m2.metric("Total Rejections", f"{total_rej:,}")
-            
-        # Logout Button
+            m2.metric("Total Rejections", f"{df[rej_col].sum():,}")
+        
+        # Calculate Average Efficiency from the data
+        if act_col and plan_col:
+            total_actual = df[act_col].sum()
+            total_planned = df[plan_col].sum()
+            avg_eff = (total_actual / total_planned) * 100 if total_planned > 0 else 0
+            m3.metric("Avg Dept Efficiency", f"{avg_eff:.1f}%")
+
         if st.sidebar.button("🔒 Logout"):
             st.session_state["authenticated"] = False
             st.rerun()
 
         st.divider()
-        st.subheader("Production History")
+        st.subheader("Production History (Includes Efficiency Column)")
+        # This will now display all columns, including Column G (Efficiency)
         st.dataframe(df, use_container_width=True)
         
-        if line_col and act_col:
+        if act_col:
             st.subheader("Performance Chart")
-            st.bar_chart(data=df, x=line_col, y=act_col)
+            st.bar_chart(data=df, x="line" if "line" in df.columns else df.columns[2], y=act_col)
     else:
         st.error("⚠️ Data connection error.")
