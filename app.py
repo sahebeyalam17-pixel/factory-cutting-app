@@ -11,7 +11,7 @@ SHEET_EDIT_URL = "https://docs.google.com/spreadsheets/d/1A2B3C4D.../edit" # You
 # CHANGE YOUR PIN HERE
 SECRET_PIN = "1234" 
 
-st.set_page_config(page_title="Shabey Alam Factory - ERP", layout="wide", page_icon="👞")
+st.set_page_config(page_title="ALAM FSD - ERP", layout="wide", page_icon="👞")
 
 # --- LOGIN SYSTEM ---
 if "authenticated" not in st.session_state:
