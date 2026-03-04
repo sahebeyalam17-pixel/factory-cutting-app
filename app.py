@@ -41,13 +41,19 @@ def load_data():
         df = pd.read_csv(f"{PUBLISH_URL}&t={time.time()}")
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         
-        # --- THE EFFICIENCY FIX ---
-        # Find any column that sounds like efficiency
-        eff_col = next((c for c in df.columns if "eff" in c), None)
-        if eff_col:
-            # Remove % signs and spaces, then turn into a number
-            df[eff_col] = df[eff_col].astype(str).str.replace('%', '').str.strip()
-            df[eff_col] = pd.to_numeric(df[eff_col], errors='coerce')
+        # --- THE BULLETPROOF EFFICIENCY FIX ---
+        # Find Actual and Planned columns
+        act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
+        plan_col = next((c for c in df.columns if "plan" in c), None)
+        
+        if act_col and plan_col:
+            # Force columns to be numbers, replace errors with 0
+            df[act_col] = pd.to_numeric(df[act_col], errors='coerce').fillna(0)
+            df[plan_col] = pd.to_numeric(df[plan_col], errors='coerce').fillna(0)
+            
+            # Create a NEW efficiency column based on the math (Actual / Planned)
+            # This ignores whatever is in Column G and does the math correctly
+            df['calculated_efficiency'] = (df[act_col] / df[plan_col] * 100).replace([float('inf'), -float('inf')], 0).fillna(0)
         
         return df
     except:
@@ -82,19 +88,21 @@ elif page == "📊 Dashboard":
     if not df.empty:
         act_col = next((c for c in df.columns if "actual" in c or "cut" in c), None)
         rej_col = next((c for c in df.columns if "rej" in c), None)
-        eff_col = next((c for c in df.columns if "eff" in c), None)
 
         m1, m2, m3 = st.columns(3)
         if act_col:
-            m1.metric("Total Pairs Cut", f"{df[act_col].sum():,}")
-        if rej_col:
-            m2.metric("Total Rejections", f"{df[rej_col].sum():,}")
-        
-        if eff_col:
-            # Calculate the average of the Efficiency column directly
-            avg_eff = df[eff_col].mean()
-            # Show the metric and make it color-coded
+            total_actual = df[act_col].sum()
+            m1.metric("Total Pairs Cut", f"{total_actual:,}")
+            
+            # Get the average from our new bulletproof column
+            avg_eff = df['calculated_efficiency'].mean()
             m3.metric("Avg Dept Efficiency", f"{avg_eff:.1f}%")
+
+        if rej_col:
+            # Clean rejections too just in case
+            df[rej_col] = pd.to_numeric(df[rej_col], errors='coerce').fillna(0)
+            total_rej = df[rej_col].sum()
+            m2.metric("Total Rejections", f"{total_rej:,}")
 
         if st.sidebar.button("🔒 Logout"):
             st.session_state["authenticated"] = False
