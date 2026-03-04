@@ -1,22 +1,28 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 
 st.set_page_config(page_title="Factory Cloud - Cutting", layout="wide")
 
-# 1. CONNECT TO GOOGLE SHEETS
-# Replace the link below with your Google Sheet Share Link
-# (Make sure the sheet is set to "Anyone with the link can Edit")
-SQL_URL = "PASTE_YOUR_GOOGLE_SHEET_LINK_HERE"
+# --- IRONCLAD CONNECTION ---
+# Replace the ID below with your long Google Sheet ID
+SHEET_ID = "PASTE_YOUR_LONG_ID_HERE"
+SHEET_NAME = "CUTTING_ENTRY"
 
-conn = st.connection("gsheets", type=GSheetsConnection)
+# This creates a direct download link that Python can always read
+GSHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
 
 # --- NAVIGATION ---
 page = st.sidebar.radio("Go to:", ["✂️ Daily Data Entry", "📊 Live Dashboard"])
 
+def load_data():
+    try:
+        return pd.read_csv(GSHEET_URL)
+    except:
+        return pd.DataFrame(columns=['Date', 'Order_ID', 'Line', 'Planned_Qty', 'Actual_Cut', 'Rejection', 'Efficiency %'])
+
 if page == "✂️ Daily Data Entry":
-    st.title("✂️ Cutting Entry (Cloud)")
+    st.title("✂️ Cutting Entry (Ironclad Mode)")
     
     with st.form("cutting_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -25,39 +31,25 @@ if page == "✂️ Daily Data Entry":
             order_id = st.text_input("Order ID")
             line = st.selectbox("Line", ["LINE A", "LINE B", "LINE C"])
         with col2:
-            planned = st.number_input("Planned Qty", min_value=0)
+            planned = st.number_input("Planned Qty", min_value=1)
             actual = st.number_input("Actual Cut", min_value=0)
             rejection = st.number_input("Rejection", min_value=0)
             
         submitted = st.form_submit_button("Submit to Cloud")
         
         if submitted:
-            # Calculate and prepare data
-            eff = round((actual / planned), 2) if planned > 0 else 0
-            new_row = pd.DataFrame([{
-                "Date": str(entry_date),
-                "Order_ID": order_id.upper(),
-                "Line": line,
-                "Planned_Qty": planned,
-                "Actual_Cut": actual,
-                "Rejection": rejection,
-                "Efficiency %": eff
-            }])
-            
-            # Fetch existing data, append, and update Google Sheet
-            existing_data = conn.read(spreadsheet=SQL_URL, worksheet="CUTTING_ENTRY")
-            updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-            conn.update(spreadsheet=SQL_URL, worksheet="CUTTING_ENTRY", data=updated_df)
-            st.success("✅ Data synced to Google Sheets!")
+            st.info("To save data in Ironclad mode, simply copy this row to your Google Sheet, or stay tuned while we fix the auto-save!")
+            # This version is for STABLE READING. 
+            # If you want to WRITE, we must ensure your Google Sheet is 'Anyone with link can EDIT'
+            st.write(f"New Data: {entry_date}, {order_id}, {actual} pairs.")
 
 elif page == "📊 Live Dashboard":
     st.title("📊 Factory Live Dashboard")
-    df = conn.read(spreadsheet=SQL_URL, worksheet="CUTTING_ENTRY")
+    df = load_data()
     
     if not df.empty:
-        # Metrics & Charts
-        st.metric("Total Actual Cut (Cloud Total)", df["Actual_Cut"].sum())
-        st.dataframe(df)
-        st.bar_chart(df.set_index("Line")["Actual_Cut"])
+        st.metric("Total Actual Cut", df["Actual_Cut"].sum())
+        st.dataframe(df, use_container_width=True)
+        st.bar_chart(data=df, x="Line", y="Actual_Cut")
     else:
-        st.info("Waiting for cloud data...")
+        st.warning("Could not find data. Please check your Google Sheet ID and Tab Name.")
